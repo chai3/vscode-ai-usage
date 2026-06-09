@@ -13,6 +13,11 @@ A simple CLI tool that scans VS Code GitHub Copilot Chat session files and gener
 python main.py
 ```
 
+```bash
+uv run https://raw.githubusercontent.com/chai3/vscode-ai-usage/main/main.py
+```
+
+
 Generates `AI_USAGE_REPORT.md` in the current directory. Overwrites any existing file.
 
 ## Output
@@ -35,23 +40,23 @@ All sessions sorted by **LastActive** descending.
 
 | Column | Description |
 |---|---|
-| `No` | Row number |
-| `LastActive` | Timestamp of the last completed request (`MM/DD HH:MM`) |
-| `Cost` | Estimated total cost in USD |
-| `Turns` | Number of requests in the session |
-| `Tools` | Number of tool invocations (`toolInvocationSerialized` + `progressTaskSerialized`) |
-| `Input` | Sum of `promptTokens` across all requests |
-| `Output` | Sum of `outputTokens` across all requests |
-| `Thinking` | Estimated thinking tokens (thinking response item text ÷ 5 chars/token) |
-| `Cached` | Sum of cached input tokens |
-| `Total` | `Input + Output` |
-| `Models` | Comma-separated list of model IDs used (e.g. `auto`, `claude-sonnet-4.5`) |
-| `Title` | Session `customTitle` |
-| `FolderPath` | Workspace folder path decoded from the URI in `workspace.json` |
-| `WorkspaceId` | VS Code `workspaceStorage` directory hash |
-| `ChatSession` | Session UUID (matches the `.jsonl` filename) |
-| `ChatSessionPath` | Full path to the `.jsonl` file (e.g. `C:\Users\...\chatSessions\5783445c-....jsonl`) |
-| `CostDetail` | Per-request costs joined by `+`, requests with no token data omitted |
+| No |  Row number |
+| LastActive |  Timestamp of the last completed request (`MM/DD HH:MM`) |
+| Cost |  Estimated total cost in USD |
+| Turns |  Number of requests in the session |
+| Tools |  Number of tool invocations (`toolInvocationSerialized` + `progressTaskSerialized`) |
+| Input |  Sum of `promptTokens` across all requests |
+| Output |  Sum of `outputTokens` across all requests |
+| Thinking |  Estimated thinking tokens (thinking response item text ÷ 5 chars/token) |
+| Cached |  Sum of cached input tokens |
+| Total |  Input + Output | 
+| Models |  Comma-separated list of model IDs used (e.g. `auto`, `claude-sonnet-4.5`) |
+| Title |  Session `customTitle | 
+| FolderPath |  Workspace folder path decoded from the URI in `workspace.json | 
+| WorkspaceId |  VS Code `workspaceStorage` directory hash |
+| ChatSession |  Session UUID (matches the `.jsonl` filename) |
+| ChatSessionPath |  Full path to the `.jsonl` file (e.g. `C:\Users\...\chatSessions\5783445c-....jsonl`) |
+| CostDetail |  Per-request costs joined by `+`, requests with no token data omitted |
 
 Example output:
 
@@ -75,22 +80,13 @@ Example output:
 
 Scans the following directories (if they exist):
 
-**Windows**
 ```
 %APPDATA%\Code\User\workspaceStorage\
 %APPDATA%\Code - Insiders\User\workspaceStorage\
 %APPDATA%\Code - Exploration\User\workspaceStorage\
-```
-
-**macOS**
-```
 ~/Library/Application Support/Code/User/workspaceStorage/
 ~/Library/Application Support/Code - Insiders/User/workspaceStorage/
 ~/Library/Application Support/Code - Exploration/User/workspaceStorage/
-```
-
-**Linux**
-```
 ~/.config/Code/User/workspaceStorage/
 ~/.config/Code - Insiders/User/workspaceStorage/
 ~/.config/Code - Exploration/User/workspaceStorage/

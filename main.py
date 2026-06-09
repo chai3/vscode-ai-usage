@@ -72,7 +72,7 @@ class DateRange(NamedTuple):
 # Fallback key: "default"
 #
 # Source: copilotPricing blocks in
-#   read-only-reference-code/ai-engineering-fluency-main/vscode-extension/src/modelPricing.json
+#   https://github.com/rajbos/ai-engineering-fluency/blob/main/vscode-extension/src/modelPricing.json
 #   (last updated 2026-06-03)
 # ---------------------------------------------------------------------------
 MODEL_PRICING: dict[ModelId, PricingEntry] = {
