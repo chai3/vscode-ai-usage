@@ -422,7 +422,7 @@ def generate_report(sessions: list[SessionInfo]) -> str:
         "",
         "## Usage Summary",
         "",
-        "|" + "|".join([""] + PERIODS) + "|",
+        "|" + "|".join(["Name"] + PERIODS) + "|",
         "|" + "|".join(["---"] * (len(PERIODS) + 1)) + "|",
     ]
 

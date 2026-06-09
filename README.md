@@ -60,9 +60,10 @@ All sessions sorted by **LastActive** descending.
 
 Example output:
 
-```
+```markdown
+## Usage Summary
 
-||Today|Yesterday|Last 30 Days|Current Month|Previous Month|
+|Name|Today|Yesterday|Last 30 Days|Current Month|Previous Month|
 |---|---|---|---|---|---|
 |Cost|0.0068|0.0000|0.0068|0.0068|0.0000|
 |Sessions|1|0|1|1|0|
