@@ -51,8 +51,8 @@ All sessions sorted by **LastActive** descending.
 | Cached |  Sum of cached input tokens |
 | Total |  Input + Output | 
 | Models |  Comma-separated list of model IDs used (e.g. `auto`, `claude-sonnet-4.5`) |
-| Title |  Session `customTitle | 
-| FolderPath |  Workspace folder path decoded from the URI in `workspace.json | 
+| Title |  Session `customTitle` | 
+| FolderPath |  Workspace folder path decoded from the URI in `workspace.json` | 
 | WorkspaceId |  VS Code `workspaceStorage` directory hash |
 | ChatSession |  Session UUID (matches the `.jsonl` filename) |
 | ChatSessionPath |  Full path to the `.jsonl` file (e.g. `C:\Users\...\chatSessions\5783445c-....jsonl`) |

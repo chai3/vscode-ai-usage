@@ -97,7 +97,6 @@ MODEL_PRICING: dict[ModelId, PricingEntry] = {
     "gemini-2.5-pro": {"input": 1.25, "output": 10.0, "cached": 0.125},
     "gemini-2.5-flash": {"input": 0.15, "output": 0.6, "cached": 0.0375},
     "gemini-2.0-flash": {"input": 0.1, "output": 0.4, "cached": 0.025},
-    "default": {"input": 0.15, "output": 0.6, "cached": 0.075},
 }
 
 
