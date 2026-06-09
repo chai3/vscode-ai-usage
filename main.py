@@ -2,25 +2,12 @@
 VSCode GitHub Copilot Chat usage report generator CLI
 Generates AI_USAGE_REPORT.md (no external dependencies)
 """
-from __future__ import annotations
 
 import json
 import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, NamedTuple, TypedDict
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-OUTPUT_FILE = "AI_USAGE_REPORT.md"
-CHARS_PER_THINKING_TOKEN = 5
-VSCODE_EDITIONS = ["Code", "Code - Insiders", "Code - Exploration"]
-TOOL_RESPONSE_KINDS = ("toolInvocationSerialized", "progressTaskSerialized")
-
-# ---------------------------------------------------------------------------
-# Type aliases
-# ---------------------------------------------------------------------------
+from urllib.parse import unquote
 
 ModelId = str
 SessionId = str
@@ -28,9 +15,15 @@ WorkspaceId = str
 FolderUri = str
 JsonObj = dict[str, Any]
 
-# ---------------------------------------------------------------------------
-# TypedDicts & NamedTuples
-# ---------------------------------------------------------------------------
+
+OUTPUT_FILE = "AI_USAGE_REPORT.md"
+CHARS_PER_THINKING_TOKEN = 5
+VSCODE_EDITIONS: list[str] = ["Code", "Code - Insiders", "Code - Exploration"]
+TOOL_RESPONSE_KINDS: tuple[str, ...] = (
+    "toolInvocationSerialized",
+    "progressTaskSerialized",
+)
+FALLBACK_MODEL_PRICING: ModelId = "gpt-4o-mini"
 
 
 class _PricingRequired(TypedDict):
@@ -40,13 +33,14 @@ class _PricingRequired(TypedDict):
 
 class PricingEntry(_PricingRequired, total=False):
     """Per-model pricing ($/million tokens). `cached` is optional."""
+
     cached: float
 
 
 class SessionInfo(TypedDict):
     session_id: SessionId
     workspace_id: WorkspaceId
-    folder: FolderUri
+    folder_path: FolderUri
     title: str
     last_active: datetime
     turns: int
@@ -59,6 +53,7 @@ class SessionInfo(TypedDict):
     models: str
     cost: float
     cost_detail: str
+    chat_session_path: str
 
 
 class PeriodStats(NamedTuple):
@@ -75,52 +70,58 @@ class DateRange(NamedTuple):
 # ---------------------------------------------------------------------------
 # Model pricing table (GitHub Copilot AI Credit rates, $/million tokens)
 # Fallback key: "default"
+#
+# Source: copilotPricing blocks in
+#   read-only-reference-code/ai-engineering-fluency-main/vscode-extension/src/modelPricing.json
+#   (last updated 2026-06-03)
 # ---------------------------------------------------------------------------
-
 MODEL_PRICING: dict[ModelId, PricingEntry] = {
-    "gpt-4o":            {"input": 5.0,   "output": 20.0,  "cached": 2.5},
-    "gpt-4o-mini":       {"input": 0.15,  "output": 0.6,   "cached": 0.075},
-    "gpt-4.1":           {"input": 2.0,   "output": 8.0,   "cached": 0.5},
-    "gpt-4.1-mini":      {"input": 0.4,   "output": 1.6,   "cached": 0.1},
-    "gpt-4.1-nano":      {"input": 0.1,   "output": 0.4,   "cached": 0.025},
-    "gpt-5":             {"input": 1.25,  "output": 10.0},
-    "gpt-5-mini":        {"input": 0.25,  "output": 2.0,   "cached": 0.025},
-    "gpt-5.4":           {"input": 2.5,   "output": 15.0,  "cached": 0.25},
-    "gpt-5.4-mini":      {"input": 0.75,  "output": 4.5,   "cached": 0.075},
-    "o1":                {"input": 15.0,  "output": 60.0},
-    "o1-mini":           {"input": 3.0,   "output": 12.0},
-    "o3":                {"input": 2.0,   "output": 8.0},
-    "o3-mini":           {"input": 1.1,   "output": 4.4},
-    "o4-mini":           {"input": 1.1,   "output": 4.4},
-    "claude-sonnet-4.5": {"input": 3.0,   "output": 15.0,  "cached": 0.3},
-    "claude-sonnet-4.6": {"input": 3.0,   "output": 15.0,  "cached": 0.3},
-    "claude-opus-4.5":   {"input": 5.0,   "output": 25.0,  "cached": 0.5},
-    "claude-haiku-4.5":  {"input": 1.0,   "output": 5.0,   "cached": 0.1},
-    "gemini-2.5-pro":    {"input": 1.25,  "output": 10.0,  "cached": 0.125},
-    "gemini-2.5-flash":  {"input": 0.15,  "output": 0.6,   "cached": 0.0375},
-    "gemini-2.0-flash":  {"input": 0.1,   "output": 0.4,   "cached": 0.025},
-    "default":           {"input": 0.15,  "output": 0.6,   "cached": 0.075},
+    "gpt-4o": {"input": 5.0, "output": 20.0, "cached": 2.5},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.6, "cached": 0.075},
+    "gpt-4.1": {"input": 2.0, "output": 8.0, "cached": 0.5},
+    "gpt-4.1-mini": {"input": 0.4, "output": 1.6, "cached": 0.1},
+    "gpt-4.1-nano": {"input": 0.1, "output": 0.4, "cached": 0.025},
+    "gpt-5": {"input": 1.25, "output": 10.0},
+    "gpt-5-mini": {"input": 0.25, "output": 2.0, "cached": 0.025},
+    "gpt-5.4": {"input": 2.5, "output": 15.0, "cached": 0.25},
+    "gpt-5.4-mini": {"input": 0.75, "output": 4.5, "cached": 0.075},
+    "o1": {"input": 15.0, "output": 60.0},
+    "o1-mini": {"input": 3.0, "output": 12.0},
+    "o3": {"input": 2.0, "output": 8.0},
+    "o3-mini": {"input": 1.1, "output": 4.4},
+    "o4-mini": {"input": 1.1, "output": 4.4},
+    "claude-sonnet-4.5": {"input": 3.0, "output": 15.0, "cached": 0.3},
+    "claude-sonnet-4.6": {"input": 3.0, "output": 15.0, "cached": 0.3},
+    "claude-opus-4.5": {"input": 5.0, "output": 25.0, "cached": 0.5},
+    "claude-haiku-4.5": {"input": 1.0, "output": 5.0, "cached": 0.1},
+    "gemini-2.5-pro": {"input": 1.25, "output": 10.0, "cached": 0.125},
+    "gemini-2.5-flash": {"input": 0.15, "output": 0.6, "cached": 0.0375},
+    "gemini-2.0-flash": {"input": 0.1, "output": 0.4, "cached": 0.025},
+    "default": {"input": 0.15, "output": 0.6, "cached": 0.075},
 }
-
-# ---------------------------------------------------------------------------
-# VSCode workspace storage discovery
-# ---------------------------------------------------------------------------
 
 
 def get_workspace_storage_dirs() -> list[str]:
-    """Return existing workspaceStorage paths for all installed VS Code editions."""
-    appdata = os.environ.get("APPDATA", "")
+    """Return existing workspaceStorage paths for all installed VS Code editions.
+
+    Checks Windows (%APPDATA%), macOS (~/Library/Application Support),
+    and Linux (~/.config) paths without OS detection.
+    """
+    home = os.path.expanduser("~")
+    base_dirs = [
+        os.environ.get("APPDATA", ""),                                      # Windows
+        os.path.join(home, "Library", "Application Support"),               # macOS
+        os.path.join(home, ".config"),                                       # Linux
+    ]
     dirs: list[str] = []
-    for edition in VSCODE_EDITIONS:
-        path = os.path.join(appdata, edition, "User", "workspaceStorage")
-        if os.path.isdir(path):
-            dirs.append(path)
+    for base in base_dirs:
+        if not base:
+            continue
+        for edition in VSCODE_EDITIONS:
+            path = os.path.join(base, edition, "User", "workspaceStorage")
+            if os.path.isdir(path):
+                dirs.append(path)
     return dirs
-
-
-# ---------------------------------------------------------------------------
-# Delta JSONL parser
-# ---------------------------------------------------------------------------
 
 
 def _set_at_path(obj: JsonObj | list[Any], keys: list[str | int], value: Any) -> None:
@@ -142,7 +143,9 @@ def _set_at_path(obj: JsonObj | list[Any], keys: list[str | int], value: Any) ->
         obj[last] = value  # type: ignore[index]
 
 
-def _append_at_path(obj: JsonObj | list[Any], keys: list[str | int], value: Any) -> None:
+def _append_at_path(
+    obj: JsonObj | list[Any], keys: list[str | int], value: Any
+) -> None:
     """Apply a kind=2 patch: append `value` to the array at `keys` path."""
     for key in keys:
         if isinstance(key, int):
@@ -192,20 +195,17 @@ def parse_jsonl(filepath: str) -> JsonObj:
     return state
 
 
-# ---------------------------------------------------------------------------
-# Pricing lookup & cost calculation
-# ---------------------------------------------------------------------------
-
-
 def _lookup_pricing(model_id: ModelId) -> PricingEntry:
-    """Return pricing for `model_id`, falling back to default with a warning."""
+    """Return pricing for `model_id`, falling back to FALLBACK_MODEL_PRICING with a warning."""
     if model_id in MODEL_PRICING:
         return MODEL_PRICING[model_id]
     for key in MODEL_PRICING:
         if key != "default" and model_id.startswith(key):
             return MODEL_PRICING[key]
-    print(f"[WARNING] unknown model '{model_id}', falling back to default pricing")
-    return MODEL_PRICING["default"]
+    print(
+        f"[WARNING] unknown model '{model_id}', falling back to '{FALLBACK_MODEL_PRICING}' pricing"
+    )
+    return MODEL_PRICING[FALLBACK_MODEL_PRICING]
 
 
 def _calc_cost(
@@ -223,11 +223,6 @@ def _calc_cost(
     ) / 1_000_000
 
 
-# ---------------------------------------------------------------------------
-# Session extraction
-# ---------------------------------------------------------------------------
-
-
 def _strip_copilot_prefix(raw_model_id: str) -> ModelId:
     return raw_model_id.replace("copilot/", "") or "unknown"
 
@@ -235,7 +230,8 @@ def _strip_copilot_prefix(raw_model_id: str) -> ModelId:
 def extract_session(
     state: JsonObj,
     workspace_id: WorkspaceId,
-    folder: FolderUri,
+    folder_path: FolderUri,
+    filepath: str,
 ) -> SessionInfo | None:
     """Extract a SessionInfo from a reconstructed delta-JSONL state, or None."""
     session_id: SessionId = state.get("sessionId") or workspace_id[:8]
@@ -246,9 +242,8 @@ def extract_session(
     # LastActive: latest completedAt or timestamp across all requests (ms)
     last_active_ms: int | None = None
     for req in requests:
-        ms: int | None = (
-            (req.get("modelState") or {}).get("completedAt")
-            or req.get("timestamp")
+        ms: int | None = (req.get("modelState") or {}).get("completedAt") or req.get(
+            "timestamp"
         )
         if ms and (last_active_ms is None or ms > last_active_ms):
             last_active_ms = ms
@@ -256,7 +251,9 @@ def extract_session(
         print(f"[WARNING] session {session_id}: no timestamp found, skipping")
         return None
 
-    last_active = datetime.fromtimestamp(last_active_ms / 1000, tz=timezone.utc).astimezone()
+    last_active = datetime.fromtimestamp(
+        last_active_ms / 1000, tz=timezone.utc
+    ).astimezone()
 
     total_input: int = 0
     total_output: int = 0
@@ -269,12 +266,10 @@ def extract_session(
 
     for req_idx, req in enumerate(requests):
         metadata: JsonObj = ((req.get("result") or {}).get("metadata")) or {}
-        prompt_tokens  = int(metadata.get("promptTokens",  0) or 0)
-        output_tokens  = int(metadata.get("outputTokens",  0) or 0)
-        cached_tokens  = int(
-            metadata.get("cachedTokens", 0)
-            or metadata.get("cachedInputTokens", 0)
-            or 0
+        prompt_tokens = int(metadata.get("promptTokens", 0) or 0)
+        output_tokens = int(metadata.get("outputTokens", 0) or 0)
+        cached_tokens = int(
+            metadata.get("cachedTokens", 0) or metadata.get("cachedInputTokens", 0) or 0
         )
         model_id = _strip_copilot_prefix(req.get("modelId") or "")
 
@@ -302,10 +297,10 @@ def extract_session(
             has_tokens = True
             cost = _calc_cost(prompt_tokens, output_tokens, cached_tokens, model_id)
             cost_parts.append(f"{cost:.4f}")
-            total_input    += prompt_tokens
-            total_output   += output_tokens
+            total_input += prompt_tokens
+            total_output += output_tokens
             total_thinking += thinking_tokens
-            total_cached   += cached_tokens
+            total_cached += cached_tokens
 
         total_tools += tool_count
         if model_id and model_id not in models:
@@ -321,10 +316,12 @@ def extract_session(
 
     total_cost = sum(float(p) for p in cost_parts)
 
+    file_uri = "file:///" + filepath.replace("\\", "/").lstrip("/")
+
     return SessionInfo(
         session_id=state.get("sessionId") or "",
         workspace_id=workspace_id,
-        folder=folder,
+        folder_path=unquote(folder_path),
         title=state.get("customTitle") or "",
         last_active=last_active,
         turns=len(requests),
@@ -337,12 +334,8 @@ def extract_session(
         models=",".join(models) if models else "unknown",
         cost=total_cost,
         cost_detail="+".join(cost_parts),
+        chat_session_path=file_uri,
     )
-
-
-# ---------------------------------------------------------------------------
-# Workspace scanner
-# ---------------------------------------------------------------------------
 
 
 def scan_all_sessions() -> list[SessionInfo]:
@@ -361,12 +354,12 @@ def scan_all_sessions() -> list[SessionInfo]:
             if not os.path.isdir(chat_dir):
                 continue
 
-            folder: FolderUri = ""
+            folder_path: FolderUri = ""
             wj_path = os.path.join(workspace_dir, "workspace.json")
             if os.path.isfile(wj_path):
                 try:
                     with open(wj_path, encoding="utf-8") as f:
-                        folder = json.load(f).get("folder", "")
+                        folder_path = json.load(f).get("folder", "")
                 except Exception:
                     pass
 
@@ -381,7 +374,7 @@ def scan_all_sessions() -> list[SessionInfo]:
                 fpath = os.path.join(chat_dir, fname)
                 try:
                     state = parse_jsonl(fpath)
-                    session = extract_session(state, workspace_id, folder)
+                    session = extract_session(state, workspace_id, folder_path, fpath)
                     if session:
                         sessions.append(session)
                 except Exception as e:
@@ -390,20 +383,15 @@ def scan_all_sessions() -> list[SessionInfo]:
     return sessions
 
 
-# ---------------------------------------------------------------------------
-# Period statistics
-# ---------------------------------------------------------------------------
-
-
 def _build_date_ranges(today: date) -> dict[str, DateRange]:
     month_start = today.replace(day=1)
     prev_month_end = month_start - timedelta(days=1)
     prev_month_start = prev_month_end.replace(day=1)
     return {
-        "Today":          DateRange(today, today),
-        "Yesterday":      DateRange(today - timedelta(days=1), today - timedelta(days=1)),
-        "Last 30 Days":   DateRange(today - timedelta(days=30), today),
-        "Current Month":  DateRange(month_start, today),
+        "Today": DateRange(today, today),
+        "Yesterday": DateRange(today - timedelta(days=1), today - timedelta(days=1)),
+        "Last 30 Days": DateRange(today - timedelta(days=30), today),
+        "Current Month": DateRange(month_start, today),
         "Previous Month": DateRange(prev_month_start, prev_month_end),
     }
 
@@ -421,10 +409,6 @@ def calculate_period_stats(sessions: list[SessionInfo]) -> dict[str, PeriodStats
         )
     return result
 
-
-# ---------------------------------------------------------------------------
-# Report generation
-# ---------------------------------------------------------------------------
 
 PERIODS = ["Today", "Yesterday", "Last 30 Days", "Current Month", "Previous Month"]
 
@@ -445,39 +429,52 @@ def generate_report(sessions: list[SessionInfo]) -> str:
     for metric in ("Cost", "Sessions", "Turns"):
         key = metric.lower()
         vals = [
-            f"{stats[p].cost:.4f}" if key == "cost"
-            else str(getattr(stats[p], key))
+            f"{stats[p].cost:.4f}" if key == "cost" else str(getattr(stats[p], key))
             for p in PERIODS
         ]
         lines.append("|" + metric + "|" + "|".join(vals) + "|")
 
     lines += [
         "",
-        "## Usage Sessions // sorted by LastActive descending",
+        "## Usage Sessions",
         "",
-        "|#|LastActive|Cost|Turns|Tools|Input|Output|Thinking|Cached|Total"
-        "|Models|Title|Folder|WorkspaceId|ChatSession|CostDetail|",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "|No|LastActive|Cost|Turns|Tools|Input|Output|Thinking|Cached|Total"
+        "|Models|Title|FolderPath|WorkspaceId|ChatSession|ChatSessionPath|CostDetail|",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
 
     for i, s in enumerate(sorted_sessions, 1):
         la = s["last_active"].strftime("%m/%d %H:%M")
-        row = "|".join([
-            str(i), la, f"{s['cost']:.4f}",
-            str(s["turns"]), str(s["tools"]),
-            str(s["input"]), str(s["output"]),
-            str(s["thinking"]), str(s["cached"]), str(s["total"]),
-            s["models"], s["title"], s["folder"],
-            s["workspace_id"], s["session_id"], s["cost_detail"],
-        ])
+        row = "|".join(
+            [
+                str(i),
+                la,
+                f"{s['cost']:.4f}",
+                str(s["turns"]),
+                str(s["tools"]),
+                str(s["input"]),
+                str(s["output"]),
+                str(s["thinking"]),
+                str(s["cached"]),
+                str(s["total"]),
+                s["models"],
+                s["title"],
+                s["folder_path"],
+                s["workspace_id"],
+                s["session_id"],
+                s["chat_session_path"],
+                s["cost_detail"],
+            ]
+        )
         lines.append("|" + row + "|")
 
+    lines += [
+        "",
+        "---",
+        "_All costs are in USD._",
+    ]
+
     return "\n".join(lines) + "\n"
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 
 def main() -> None:
