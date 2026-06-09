@@ -1,4 +1,4 @@
-# vscode-ai-usage
+# VSCode AI Usage
 
 A simple CLI tool that scans VS Code GitHub Copilot Chat session files and generates a Markdown usage report with token counts and costs per session.
 
