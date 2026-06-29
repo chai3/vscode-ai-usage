@@ -433,6 +433,29 @@ def generate_report(sessions: list[SessionInfo]) -> str:
         ]
         lines.append("|" + metric + "|" + "|".join(vals) + "|")
 
+    today = datetime.now().astimezone().date()
+    graph_days = [today - timedelta(days=31 - i) for i in range(32)]
+    daily_cost: dict[date, float] = {d: 0.0 for d in graph_days}
+    for s in sessions:
+        d = s["last_active"].date()
+        if d in daily_cost:
+            daily_cost[d] += s["cost"]
+    labels_str = ", ".join(
+        f'"{d.month}/{d.day}"' if i == 0 or d.month != graph_days[i - 1].month else f'"{d.day}"'
+        for i, d in enumerate(graph_days)
+    )
+    values_str = ", ".join(f"{daily_cost[d]:.4f}" for d in graph_days)
+    lines += [
+        "",
+        "## Daily Cost",
+        "",
+        "```mermaid",
+        "xychart-beta",
+        f'    x-axis "Date" [{labels_str}]',
+        f'    bar "Cost" [{values_str}]',
+        "```",
+    ]
+
     lines += [
         "",
         "## Usage Sessions",
